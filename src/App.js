@@ -159,18 +159,44 @@ function LoginScreen(){
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// ADD EXPENSE MODAL
+// ADD EXPENSE MODAL — with field-level validation
 // ════════════════════════════════════════════════════════════════════════════════
 function AddExpenseModal({onClose,trips,currentUser,notify}){
   const[form,setForm]=useState({tripId:trips[0]?.id||"",category:"flights",amount:"",description:"",date:new Date().toISOString().slice(0,10)});
+  const[errors,setErrors]=useState({});
+  const[touched,setTouched]=useState({});
   const[file,setFile]=useState(null);
   const[saving,setSaving]=useState(false);
   const fileRef=useRef();
-  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const iStyle={width:"100%",border:`1.5px solid ${BD}`,borderRadius:12,padding:"14px",color:TX,fontSize:15,outline:"none",background:BG,boxSizing:"border-box",fontFamily:"inherit"};
-  const lbl={color:T3,fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:6,display:"block"};
+
+  const set=(k,v)=>{
+    setForm(f=>({...f,[k]:v}));
+    // clear error as soon as user types
+    if(errors[k]) setErrors(e=>({...e,[k]:""}));
+  };
+  const touch=k=>setTouched(t=>({...t,[k]:true}));
+
+  const REQUIRED_EXPENSE={
+    tripId:"Please select a trip",
+    amount:"Amount is required",
+    description:"Please describe the expense",
+    date:"Date is required",
+  };
+
+  const validate=()=>{
+    const errs={};
+    if(!form.tripId) errs.tripId=REQUIRED_EXPENSE.tripId;
+    if(!form.amount||Number(form.amount)<=0) errs.amount="Enter a valid amount greater than 0";
+    if(!form.description.trim()) errs.description=REQUIRED_EXPENSE.description;
+    if(!form.date) errs.date=REQUIRED_EXPENSE.date;
+    return errs;
+  };
+
   const submit=async()=>{
-    if(!form.amount||!form.description||!form.tripId)return;
+    // Mark all as touched so errors show
+    setTouched({tripId:true,amount:true,description:true,date:true});
+    const errs=validate();
+    if(Object.keys(errs).length>0){setErrors(errs);return;}
     setSaving(true);
     try{
       let receiptURL=null;
@@ -180,22 +206,62 @@ function AddExpenseModal({onClose,trips,currentUser,notify}){
     }catch(e){notify("Error: "+e.message);}
     setSaving(false);
   };
+
+  const fieldStyle=(key)=>({
+    width:"100%",
+    border:`1.5px solid ${touched[key]&&errors[key]?RD:touched[key]&&!errors[key]?GR:BD}`,
+    borderRadius:12,padding:"14px",color:TX,fontSize:15,outline:"none",
+    background:touched[key]&&errors[key]?RDL:BG,
+    boxSizing:"border-box",fontFamily:"inherit",
+    transition:"border-color 0.2s, background 0.2s",
+  });
+
+  const lbl={fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:6,display:"flex",alignItems:"center",gap:4};
+
+  const FIELDS=[
+    {label:"Trip",type:"select",key:"tripId",opts:trips.map(t=>[t.id,t.name]),required:true},
+    {label:"Category",type:"select",key:"category",opts:CATEGORIES.map(c=>[c.id,`${c.icon} ${c.label}`]),required:false},
+    {label:"Amount (₹)",type:"number",key:"amount",ph:"e.g. 45000",required:true},
+    {label:"Description",type:"text",key:"description",ph:"What was this expense for?",required:true},
+    {label:"Date",type:"date",key:"date",required:true},
+  ];
+
   return(
-    <Modal onClose={onClose} title="Log Expense" subtitle="Add a cost to a trip">
-      {[{label:"Trip",type:"select",key:"tripId",opts:trips.map(t=>[t.id,t.name])},{label:"Category",type:"select",key:"category",opts:CATEGORIES.map(c=>[c.id,`${c.icon} ${c.label}`])},{label:"Amount (₹)",type:"number",key:"amount",ph:"e.g. 45000"},{label:"Description",type:"text",key:"description",ph:"What was this for?"},{label:"Date",type:"date",key:"date"}].map(({label,type,key,opts,ph})=>(
+    <Modal onClose={onClose} title="Log Expense" subtitle="Fields marked * are required">
+      {FIELDS.map(({label,type,key,opts,ph,required})=>(
         <div key={key} style={{marginBottom:16}}>
-          <label style={lbl}>{label}</label>
-          {type==="select"?<select value={form[key]} onChange={e=>set(key,e.target.value)} style={{...iStyle,appearance:"none"}}>{opts.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>:<input type={type} value={form[key]} onChange={e=>set(key,e.target.value)} placeholder={ph} style={iStyle}/>}
+          <label style={{...lbl,color:touched[key]&&errors[key]?RD:T3}}>
+            {label}{required&&<span style={{color:RD,fontSize:13}}>*</span>}
+            {touched[key]&&!errors[key]&&form[key]&&<span style={{color:GR,fontSize:13,marginLeft:"auto"}}>✓</span>}
+          </label>
+          {type==="select"
+            ?<select value={form[key]} onChange={e=>{set(key,e.target.value);touch(key);}} onBlur={()=>touch(key)} style={{...fieldStyle(key),appearance:"none"}}>{opts.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>
+            :<input type={type} value={form[key]} onChange={e=>{set(key,e.target.value);touch(key);}} onBlur={()=>touch(key)} placeholder={ph} style={fieldStyle(key)}/>}
+          {touched[key]&&errors[key]&&(
+            <div style={{display:"flex",alignItems:"center",gap:6,marginTop:5}}>
+              <span style={{fontSize:15}}>⚠️</span>
+              <span style={{color:RD,fontSize:12,fontWeight:600}}>{errors[key]}</span>
+            </div>
+          )}
         </div>
       ))}
       <div style={{marginBottom:24}}>
-        <label style={lbl}>Receipt / Bill (optional)</label>
+        <label style={{...lbl,color:T3}}>Receipt / Bill <span style={{color:T3,fontWeight:400,textTransform:"none",letterSpacing:0}}>(optional)</span></label>
         <div onClick={()=>fileRef.current.click()} style={{border:`2px dashed ${file?O:BD}`,borderRadius:12,padding:"16px",cursor:"pointer",background:file?OL:BG,display:"flex",alignItems:"center",gap:12}}>
           <span style={{fontSize:24}}>📎</span>
           <div><div style={{fontSize:14,fontWeight:600,color:file?OD:T2}}>{file?file.name:"Tap to attach bill / receipt"}</div><div style={{fontSize:12,color:T3}}>PNG, JPG, PDF — max 5MB</div></div>
         </div>
         <input ref={fileRef} type="file" accept="image/*,.pdf" style={{display:"none"}} onChange={e=>setFile(e.target.files[0]||null)}/>
       </div>
+      {Object.keys(errors).length>0&&Object.keys(touched).length>0&&(
+        <div style={{background:RDL,border:`1px solid ${RDB}`,borderRadius:12,padding:"12px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:18}}>⚠️</span>
+          <div>
+            <div style={{fontSize:13,fontWeight:700,color:RD}}>Please fix the errors above</div>
+            <div style={{fontSize:12,color:"#DC2626",marginTop:2}}>{Object.values(errors).filter(Boolean).join(" · ")}</div>
+          </div>
+        </div>
+      )}
       <button onClick={submit} disabled={saving} style={{width:"100%",background:O,border:"none",borderRadius:14,padding:"16px 0",color:WH,fontSize:16,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
         {saving?<><Spinner size={20} color={WH}/> Saving…</>:"Save Expense"}
       </button>
@@ -204,41 +270,123 @@ function AddExpenseModal({onClose,trips,currentUser,notify}){
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// ADD TRIP MODAL
+// ADD TRIP MODAL — with field-level validation
 // ════════════════════════════════════════════════════════════════════════════════
 function AddTripModal({onClose,notify}){
   const[form,setForm]=useState({name:"",client:"",destination:"",staff:"",budget:"",invoiceAmount:"",commissionPct:10,paymentStatus:"unpaid",paymentReceived:0,status:"active",startDate:"",endDate:""});
+  const[errors,setErrors]=useState({});
+  const[touched,setTouched]=useState({});
   const[saving,setSaving]=useState(false);
-  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const iStyle={width:"100%",border:`1.5px solid ${BD}`,borderRadius:12,padding:"14px",color:TX,fontSize:15,outline:"none",background:BG,boxSizing:"border-box",fontFamily:"inherit"};
-  const lbl={color:T3,fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:6,display:"block"};
+
+  const set=(k,v)=>{
+    setForm(f=>({...f,[k]:v}));
+    if(errors[k]) setErrors(e=>({...e,[k]:""}));
+  };
+  const touch=k=>setTouched(t=>({...t,[k]:true}));
+
+  const validate=()=>{
+    const errs={};
+    if(!form.name.trim())         errs.name="Trip name is required";
+    if(!form.client.trim())       errs.client="Client name is required";
+    if(!form.destination.trim())  errs.destination="Destination is required";
+    if(!form.startDate)           errs.startDate="Start date is required";
+    if(!form.endDate)             errs.endDate="End date is required";
+    if(form.startDate&&form.endDate&&form.endDate<form.startDate) errs.endDate="End date must be after start date";
+    if(!form.invoiceAmount||Number(form.invoiceAmount)<=0) errs.invoiceAmount="Invoice amount is required — this is what you charge the client";
+    if(!form.budget||Number(form.budget)<=0) errs.budget="Budget is required — your internal cost limit";
+    return errs;
+  };
+
   const submit=async()=>{
-    if(!form.name||!form.client)return;
+    const allTouched={name:true,client:true,destination:true,startDate:true,endDate:true,invoiceAmount:true,budget:true};
+    setTouched(allTouched);
+    const errs=validate();
+    if(Object.keys(errs).length>0){setErrors(errs);return;}
     setSaving(true);
-    try{await addDoc(collection(db,"trips"),{...form,budget:Number(form.budget)||0,invoiceAmount:Number(form.invoiceAmount)||0,commissionPct:Number(form.commissionPct)||0,paymentReceived:Number(form.paymentReceived)||0,createdAt:serverTimestamp()});notify("Trip created ✓");onClose();}
-    catch(e){notify("Error: "+e.message);}
+    try{
+      await addDoc(collection(db,"trips"),{...form,budget:Number(form.budget)||0,invoiceAmount:Number(form.invoiceAmount)||0,commissionPct:Number(form.commissionPct)||0,paymentReceived:Number(form.paymentReceived)||0,createdAt:serverTimestamp()});
+      notify("Trip created ✓");onClose();
+    }catch(e){notify("Error: "+e.message);}
     setSaving(false);
   };
+
+  const fieldStyle=key=>({
+    width:"100%",
+    border:`1.5px solid ${touched[key]&&errors[key]?RD:touched[key]&&!errors[key]&&form[key]?GR:BD}`,
+    borderRadius:12,padding:"14px",color:TX,fontSize:15,outline:"none",
+    background:touched[key]&&errors[key]?RDL:BG,
+    boxSizing:"border-box",fontFamily:"inherit",
+    transition:"border-color 0.2s, background 0.2s",
+  });
+
+  const lbl=(key,required)=>(
+    <label style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:6,display:"flex",alignItems:"center",gap:4,color:touched[key]&&errors[key]?RD:T3}}>
+      {/* label text passed as children */}
+    </label>
+  );
+
+  const FIELDS=[
+    {label:"Trip Name",          key:"name",          type:"text",   ph:"e.g. Maldives Honeymoon Package", required:true},
+    {label:"Client Name",        key:"client",        type:"text",   ph:"e.g. Shah Family",                required:true},
+    {label:"Destination",        key:"destination",   type:"text",   ph:"e.g. Maldives",                   required:true},
+    {label:"Staff Assigned",     key:"staff",         type:"text",   ph:"e.g. Priya Mehta",                required:false},
+    {label:"Start Date",         key:"startDate",     type:"date",   ph:"",                                required:true},
+    {label:"End Date",           key:"endDate",       type:"date",   ph:"",                                required:true},
+    {label:"Our Budget (₹)",     key:"budget",        type:"number", ph:"Your internal cost limit",        required:true},
+    {label:"Invoice to Client (₹)",key:"invoiceAmount",type:"number",ph:"What you charge the client",     required:true},
+    {label:"Commission %",       key:"commissionPct", type:"number", ph:"e.g. 10",                         required:false},
+    {label:"Amount Received (₹)",key:"paymentReceived",type:"number",ph:"Client paid so far",             required:false},
+  ];
+
+  const errCount=Object.keys(errors).filter(k=>errors[k]).length;
+
   return(
-    <Modal onClose={onClose} title="New Trip" subtitle="Create a client trip">
+    <Modal onClose={onClose} title="New Trip" subtitle="Fields marked * are required">
       <div style={{background:BLL,border:`1px solid ${BL}33`,borderRadius:12,padding:"12px 14px",marginBottom:20}}>
         <div style={{fontSize:13,fontWeight:700,color:BL,marginBottom:3}}>💡 Trip vs Expense</div>
         <div style={{fontSize:12,color:T2,lineHeight:1.6}}>A <strong>Trip</strong> is the whole project (e.g. "Maldives for Shah Family"). An <strong>Expense</strong> is each cost inside it (flight, hotel, meals).</div>
       </div>
-      {[{label:"Trip Name",key:"name",type:"text",ph:"e.g. Maldives Honeymoon Package"},{label:"Client Name",key:"client",type:"text",ph:"e.g. Shah Family"},{label:"Destination",key:"destination",type:"text",ph:"e.g. Maldives"},{label:"Staff Assigned",key:"staff",type:"text",ph:"e.g. Priya Mehta"},{label:"Start Date",key:"startDate",type:"date"},{label:"End Date",key:"endDate",type:"date"},{label:"Our Budget (₹)",key:"budget",type:"number",ph:"Internal cost limit"},{label:"Invoice to Client (₹)",key:"invoiceAmount",type:"number",ph:"What you charge the client"},{label:"Commission %",key:"commissionPct",type:"number",ph:"e.g. 10"},{label:"Amount Received (₹)",key:"paymentReceived",type:"number",ph:"Client paid so far"}].map(({label,key,type,ph})=>(
+
+      {FIELDS.map(({label,key,type,ph,required})=>(
         <div key={key} style={{marginBottom:14}}>
-          <label style={lbl}>{label}</label>
-          <input type={type} value={form[key]} onChange={e=>set(key,e.target.value)} placeholder={ph} style={iStyle}/>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:6,display:"flex",alignItems:"center",gap:4,color:touched[key]&&errors[key]?RD:T3}}>
+            {label}
+            {required&&<span style={{color:RD,fontSize:13}}>*</span>}
+            {touched[key]&&!errors[key]&&form[key]&&<span style={{color:GR,fontSize:13,marginLeft:"auto"}}>✓</span>}
+          </div>
+          <input type={type} value={form[key]} onChange={e=>{set(key,e.target.value);touch(key);}} onBlur={()=>touch(key)} placeholder={ph} style={fieldStyle(key)}/>
+          {touched[key]&&errors[key]&&(
+            <div style={{display:"flex",alignItems:"center",gap:6,marginTop:5}}>
+              <span style={{fontSize:14}}>⚠️</span>
+              <span style={{color:RD,fontSize:12,fontWeight:600}}>{errors[key]}</span>
+            </div>
+          )}
         </div>
       ))}
+
       <div style={{marginBottom:20}}>
-        <label style={lbl}>Payment Status</label>
+        <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:8,color:T3}}>Payment Status</div>
         <div style={{display:"flex",gap:10}}>
           {[["paid","✓ Paid",GRL,"#059669",GRB],["partial","◑ Partial",YLL,"#D97706",YLB],["unpaid","✕ Unpaid",RDL,"#DC2626",RDB]].map(([val,label,bg,col,bdr])=>(
             <div key={val} onClick={()=>set("paymentStatus",val)} style={{flex:1,textAlign:"center",padding:"12px 0",borderRadius:12,background:form.paymentStatus===val?bg:BG,border:`1.5px solid ${form.paymentStatus===val?bdr:BD}`,color:form.paymentStatus===val?col:T2,fontWeight:700,fontSize:13,cursor:"pointer"}}>{label}</div>
           ))}
         </div>
       </div>
+
+      {errCount>0&&Object.keys(touched).length>0&&(
+        <div style={{background:RDL,border:`1px solid ${RDB}`,borderRadius:12,padding:"12px 14px",marginBottom:16,display:"flex",alignItems:"flex-start",gap:10}}>
+          <span style={{fontSize:18,flexShrink:0}}>⚠️</span>
+          <div>
+            <div style={{fontSize:13,fontWeight:700,color:RD}}>Please fix {errCount} error{errCount>1?"s":""} before saving</div>
+            <ul style={{margin:"6px 0 0 16px",padding:0}}>
+              {Object.entries(errors).filter(([,v])=>v).map(([k,v])=>(
+                <li key={k} style={{fontSize:12,color:"#DC2626",marginBottom:2}}>{v}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
       <button onClick={submit} disabled={saving} style={{width:"100%",background:O,border:"none",borderRadius:14,padding:"16px 0",color:WH,fontSize:16,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
         {saving?<><Spinner size={20} color={WH}/> Saving…</>:"Create Trip"}
       </button>
